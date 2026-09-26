@@ -3,7 +3,7 @@ import folium
 def build_carto_map(df, selected_metric, carto_key, center_lat=35.7796, center_lon=-78.6382, zoom=8):
     """Constructs a Folium map with CARTO tiles and county marker dots."""
     # Create base map
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=None)
+    m = folium.Map(location=[35.7796, -78.6382], zoom_start=7, tiles=None)
     
     # CARTO Voyager tile URL
     carto_tile_url = f"https://basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png?api_key={carto_key}"
@@ -11,9 +11,11 @@ def build_carto_map(df, selected_metric, carto_key, center_lat=35.7796, center_l
     # Add tile layer
     folium.TileLayer(
         tiles=carto_tile_url,
-        attr="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors &copy; <a href='https://carto.com/attributions'>CARTO</a>",
+        attr="&copy; OpenStreetMap contributors &copy; CARTO",
         name="CARTO Voyager",
-        max_zoom=19
+        max_zoom=19,
+        overlay=False,
+        control=True
     ).add_to(m)
 
     # Add county marker circles

@@ -91,7 +91,7 @@ with tab_map:
     with col1:
         # Build map using modularized map_engine
         m = build_carto_map(df, selected_metric, carto_key)
-        st_folium(m, width=800, height=500)
+        st_folium(m, height=500, use_container_width=True, returned_objects=[])
 
     with col2:
         st.write("### Regional Summary")
