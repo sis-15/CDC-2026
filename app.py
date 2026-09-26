@@ -22,7 +22,7 @@ st.set_page_config(
 # ==========================================
 # 2. Key & Data Loading
 # ==========================================
-carto_key = st.secrets.get("CARTOMAPS_API_KEY", "")
+# carto_key = st.secrets.get("CARTOMAPS_API_KEY", "")
 
 @st.cache_data
 def load_data():
@@ -66,10 +66,10 @@ else:
     df_cfpb = pd.read_csv("data/mock_2026_cfpb_complaints.csv")
 
 # CARTO Key status indicator
-if not carto_key:
-    st.sidebar.error("⚠️ CARTO Key Missing in Secrets!")
-else:
-    st.sidebar.success("🔑 CARTO Key Loaded")
+# if not carto_key:
+#     st.sidebar.error("⚠️ CARTO Key Missing in Secrets!")
+# else:
+#     st.sidebar.success("🔑 CARTO Key Loaded")
 
 # ==========================================
 # 4. Tabs & Layout
@@ -90,7 +90,7 @@ with tab_map:
     
     with col1:
         # Build map using modularized map_engine
-        m = build_carto_map(df, selected_metric, carto_key)
+        m = build_carto_map(df, selected_metric)
         st_folium(m, height=500, use_container_width=True, returned_objects=[])
 
     with col2:
