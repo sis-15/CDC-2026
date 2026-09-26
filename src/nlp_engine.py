@@ -22,17 +22,46 @@ def classify_complaint_narrative(text):
         
     return category, relief_rate
 
-def generate_dispute_letter(county, narrative, category):
-    """Generates a structured CFPB dispute letter template."""
-    return f"""[Date]
-To: Consumer Financial Protection Bureau / Mortgage Servicer
-Subject: Formal Dispute Regarding {category}
 
-I am submitting a formal dispute regarding a mortgage lending/servicing issue in {county} County.
+def predict_complaint_category(text):
+    """
+    Wrapper function to maintain compatibility with app.py imports.
+    Returns only the predicted category string.
+    """
+    category, _ = classify_complaint_narrative(text)
+    return category
 
-Description of Issue:
+
+def generate_dispute_letter(narrative, company_name="Financial Institution", consumer_name="Consumer", county="Regional"):
+    """
+    Generates a structured CFPB dispute letter template matching app.py inputs.
+    """
+    category, relief_rate = classify_complaint_narrative(narrative)
+    
+    return f"""FORMAL NOTICE OF DISPUTE & REQUEST FOR INVESTIGATION
+
+TO: Compliance Department
+    {company_name}
+
+FROM: {consumer_name}
+LOCATION: {county} County
+DATE: September 26, 2026
+RE: Formal Consumer Grievance - {category}
+
+To Whom It May Concern,
+
+I am writing to formally dispute action(s) taken regarding my mortgage account/application with {company_name}. 
+
+Dispute Category: {category}
+Historical Category Relief Rate: {relief_rate * 100:.0f}%
+
+STATEMENT OF FACTS:
 {narrative}
 
-Requested Action:
-Immediate review, investigation into systemic lending disparities, and full resolution of improper charges or decisions.
+REQUESTED ACTION:
+Pursuant to the Consumer Financial Protection Act and applicable federal consumer financial laws (including the Fair Credit Reporting Act and Equal Credit Opportunity Act), I hereby request an immediate review, investigation into potential systemic lending disparities, and full resolution/correction of improper charges or decisions.
+
+Sincerely,
+
+{consumer_name}
 """
