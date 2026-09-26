@@ -1,0 +1,5 @@
+FIPS,State,County,Total_Complaints,HMDA_Denial_Rate,JSD_Score,Spatial_Entropy,Lat,Lon
+37063,NC,Durham,450,0.18,0.34,2.15,35.9940,-78.8986
+37183,NC,Wake,1200,0.12,0.15,3.80,35.7975,-78.6431
+37119,NC,Mecklenburg,2100,0.22,0.52,1.90,35.2271,-80.8431
+37081,NC,Guilford,620,0.19,0.28,2.70,36.0726,-79.7920
