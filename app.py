@@ -101,36 +101,94 @@ with tab_map:
         st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------
-# TAB 2: PREDICTIVE MODEL
+# TAB 2: PREDICTIVE MODEL & EXPLAINABILITY
 # ------------------------------------------
 with tab_predict:
     st.subheader("Predictive Risk & Approval Estimator")
-    st.caption("Live inference powered by Random Forest trained on HMDA applicant data.")
+    st.caption("Live inference and model explainability powered by Random Forest trained on HMDA applicant data.")
     
-    c1, c2 = st.columns(2)
-    with c1:
-        income = st.number_input("Applicant Annual Income ($k)", value=75, step=5)
-        loan_amount = st.number_input("Requested Loan Amount ($k)", value=250, step=10)
-    with c2:
-        minority_pct = st.slider("Tract Minority Population %", 0.0, 100.0, 25.0)
+    col_input, col_viz = st.columns([1, 1])
     
-    if st.button("Run Risk & Approval Model"):
-        try:
-            model = joblib.load("src/mortgage_model.pkl")
-            input_data = pd.DataFrame([[loan_amount, income, minority_pct]], 
-                                      columns=['loan_amount', 'income', 'tract_minority_population_percent'])
-            
-            denial_prob = model.predict_proba(input_data)[0][1]
-            approval_prob = 1.0 - denial_prob
-            
-            st.success("Model Inference Complete!")
-            st.metric(label="Estimated Approval Probability", value=f"{approval_prob * 100:.1f}%")
-            st.progress(approval_prob)
-            
-            if denial_prob > 0.5:
-                st.warning("High Denial Risk Flagged: Loan-to-income ratio or regional tract characteristics indicate elevated risk.")
-        except Exception as e:
-            st.error(f"Error loading model: {e}")
+    with col_input:
+        st.markdown("### Applicant & Tract Profile")
+        income = st.number_input("Applicant Annual Income ($k)", value=75, step=5, help="Annual household income in thousands")
+        loan_amount = st.number_input("Requested Loan Amount ($k)", value=250, step=10, help="Total mortgage loan requested in thousands")
+        minority_pct = st.slider("Tract Minority Population %", 0.0, 100.0, 25.0, help="Percentage of minority population in census tract")
+        
+        # Calculate derived feature for better context
+        lti_ratio = loan_amount / income if income > 0 else 0
+        st.caption(f"**Calculated Loan-to-Income (LTI) Ratio:** `{lti_ratio:.2f}x`")
+        
+        run_model = st.button("Run Risk & Approval Model", use_container_width=True)
+
+    with col_viz:
+        st.markdown("### Model Assessment")
+        
+        if run_model:
+            try:
+                model = joblib.load("src/mortgage_model.pkl")
+                input_data = pd.DataFrame(
+                    [[loan_amount, income, minority_pct]], 
+                    columns=['loan_amount', 'income', 'tract_minority_population_percent']
+                )
+                
+                denial_prob = model.predict_proba(input_data)[0][1]
+                approval_prob = 1.0 - denial_prob
+                
+                st.success("Model Inference Complete")
+                
+                # Metric display
+                m1, m2 = st.columns(2)
+                m1.metric(label="Estimated Approval Probability", value=f"{approval_prob * 100:.1f}%")
+                m2.metric(label="Estimated Denial Risk", value=f"{denial_prob * 100:.1f}%")
+                
+                st.progress(approval_prob)
+                
+                if denial_prob > 0.5:
+                    st.warning("High Denial Risk Flagged: Loan-to-income ratio or regional tract characteristics indicate elevated risk.")
+                else:
+                    st.info("Favorable Approval Outlook: Applicant income and loan profile fall within typical approval ranges.")
+                    
+            except Exception as e:
+                st.error(f"Error executing model inference: {e}")
+        else:
+            st.info("Adjust the parameters on the left and click 'Run Risk & Approval Model' to inspect predictions.")
+
+    st.markdown("---")
+    
+    # Feature Importance Visualization
+    st.subheader("Model Feature Importance & Explainability")
+    st.markdown("""
+    *Understanding driver impact: How different financial and regional variables contribute to approval decisioning across the dataset.*
+    """)
+    
+    try:
+        model = joblib.load("src/mortgage_model.pkl")
+        
+        # Extract feature importances from trained Random Forest
+        feature_names = ['Loan Amount', 'Applicant Income', 'Tract Minority %']
+        importances = model.feature_importances_
+        
+        fi_df = pd.DataFrame({
+            'Feature': feature_names,
+            'Importance': importances
+        }).sort_values(by='Importance', ascending=True)
+        
+        fig_fi = px.bar(
+            fi_df, 
+            x='Importance', 
+            y='Feature', 
+            orientation='h',
+            title='Random Forest Feature Importance Weights',
+            labels={'Importance': 'Relative Importance Weight', 'Feature': 'Model Feature'},
+            color='Importance',
+            color_continuous_scale='Blues'
+        )
+        fig_fi.update_layout(showlegend=False, height=300)
+        st.plotly_chart(fig_fi, use_container_width=True)
+        
+    except Exception as e:
+        st.warning("Feature importance plot offline: Ensure `src/mortgage_model.pkl` is present in your repository.")
 
 # ------------------------------------------
 # TAB 3: NLP ASSISTANT

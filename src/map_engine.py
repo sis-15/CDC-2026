@@ -1,25 +1,25 @@
 import folium
 
-def build_carto_map(df, selected_metric, carto_key=None, center_lat=35.7796, center_lon=-78.6382, zoom=8):
-    """
-    Constructs a Folium map using standard OpenStreetMap tiles and county marker dots.
-    (carto_key is retained as an optional argument for backwards compatibility with app.py).
-    """
-    # Create base map with native OpenStreetMap tiles
-    m = folium.Map(
-        location=[center_lat, center_lon], 
-        zoom_start=zoom, 
-        tiles="OpenStreetMap"
-    )
+def build_carto_map(df, selected_metric, center_lat=35.7796, center_lon=-78.6382, zoom=8):
+    """Constructs a Folium map with dynamically scaled marker circles based on the selected metric."""
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles="OpenStreetMap")
+    
+    # Calculate min and max for dynamic scaling
+    metric_min = df[selected_metric].min()
+    metric_max = df[selected_metric].max()
+    metric_range = metric_max - metric_min if metric_max != metric_min else 1
 
-    # Add county marker circles
     for _, row in df.iterrows():
-        radius = max(8, row.get("Total_Complaints", 100) / 50)
-        color = "red" if row[selected_metric] > df[selected_metric].median() else "blue"
+        # Scale radius dynamically between 8px and 28px
+        val = row[selected_metric]
+        normalized_size = (val - metric_min) / metric_range
+        radius = 8 + (normalized_size * 20)
+        
+        color = "red" if val > df[selected_metric].median() else "blue"
         
         popup_text = f"""
         <b>County:</b> {row.get('County', 'N/A')}, {row.get('State', 'NC')}<br>
-        <b>{selected_metric}:</b> {row[selected_metric]}<br>
+        <b>{selected_metric.replace('_', ' ')}:</b> {val:.3f}<br>
         <b>Denial Rate:</b> {row.get('HMDA_Denial_Rate', 0)*100:.1f}%<br>
         <b>Total Complaints:</b> {row.get('Total_Complaints', 0)}
         """
