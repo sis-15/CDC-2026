@@ -121,43 +121,58 @@ def load_data():
     try:
         df = pd.read_parquet("data/geo_statistical_summary.parquet")
         
-        # Standardize column names (strip whitespace)
+        # 1. Clean whitespace and normalize case comparison
         df.columns = df.columns.str.strip()
         
-        # Comprehensive mapping for casing & synonyms
-        column_mapping = {
+        # 2. Case-insensitive dictionary mapping to standardize column names
+        mapping = {
             "fips": "FIPS",
             "county": "County",
             "state": "State",
             "lat": "Lat",
             "latitude": "Lat",
             "lon": "Lon",
-            "long": "Lon",
             "longitude": "Lon",
             "total_complaints": "Total_Complaints",
+            "total complaints": "Total_Complaints",
             "hmda_denial_rate": "HMDA_Denial_Rate",
+            "hmda denial rate": "HMDA_Denial_Rate",
             "disparity_ratio": "Disparity_Ratio",
+            "disparity ratio": "Disparity_Ratio",
             "median_loan_amount": "Median_Loan_Amount",
+            "median loan amount": "Median_Loan_Amount",
+            "median_loan": "Median_Loan_Amount",
+            "median loan": "Median_Loan_Amount",
             "median_dti": "Median_DTI",
+            "median dti": "Median_DTI",
             "median_income": "Median_Income",
+            "median income": "Median_Income",
             "median_cltv": "Median_CLTV",
+            "median cltv": "Median_CLTV",
             "mean_interest_rate": "Mean_Interest_Rate",
+            "mean interest rate": "Mean_Interest_Rate",
+            "median_interest_rate": "Mean_Interest_Rate",
+            "median interest rate": "Mean_Interest_Rate",
             "mean_rate_spread": "Mean_Rate_Spread",
+            "mean rate spread": "Mean_Rate_Spread",
             "jsd_score": "JSD_Score",
+            "jsd score": "JSD_Score",
+            "jsd": "JSD_Score",
             "spatial_entropy": "Spatial_Entropy",
+            "spatial entropy": "Spatial_Entropy",
+            "se": "Spatial_Entropy",
             "tract_minority_population_percent": "tract_minority_population_percent"
         }
         
-        # Case-insensitive column rename matching
         lower_cols = {c.lower(): c for c in df.columns}
         rename_dict = {}
-        for target_lower, standardized in column_mapping.items():
-            if target_lower in lower_cols:
-                rename_dict[lower_cols[target_lower]] = standardized
+        for key, target_name in mapping.items():
+            if key in lower_cols:
+                rename_dict[lower_cols[key]] = target_name
                 
         df = df.rename(columns=rename_dict)
         
-        # Convert numeric columns safely
+        # 3. Clean numeric columns safely
         numeric_cols = [
             "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
             "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
@@ -167,27 +182,21 @@ def load_data():
         
         for col in numeric_cols:
             if col in df.columns:
+                # Keep digits, decimal points, and negative signs only
                 df[col] = pd.to_numeric(
                     df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True), 
                     errors="coerce"
                 )
 
-        # Force US longitudes to be negative if they were exported as positive
+        # 4. Enforce negative longitude for US coordinates
         if "Lon" in df.columns:
             df["Lon"] = df["Lon"].apply(lambda x: -abs(x) if pd.notnull(x) and x > 0 else x)
 
-        # Clean NaN coordinates without dropping valid rows
-        if "Lat" in df.columns and "Lon" in df.columns:
-            df = df.dropna(subset=["Lat", "Lon"])
-
-        # Check if table has rows remaining
-        if df.empty:
-            raise ValueError("Parquet file loaded successfully but contained 0 valid rows after coordinate processing.")
-            
-        print(f"Successfully loaded {len(df)} real records from Parquet!")
-
+        # 5. Clean up missing values without zeroing out valid metrics
+        df = df.dropna(subset=["Lat", "Lon"])
+        
     except Exception as e:
-        st.warning(f"Using fallback dataset. Reason: {e}")
+        st.error(f"Error loading Parquet: {e}")
         # Fallback mock dataset
         data = {
             "FIPS": ["37183", "37119", "37063", "37067", "37081"],
@@ -364,7 +373,7 @@ with tab_map:
     for _, row in filtered_df.iterrows():
         val = row.get(selected_metric_col, 0)
         
-        # Color scale thresholding rules
+        # Color scale rules
         if selected_metric_col == "Disparity_Ratio":
             color = "red" if val >= 1.5 else "blue"
         elif selected_metric_col == "HMDA_Denial_Rate":
@@ -382,29 +391,30 @@ with tab_map:
         state_name = row.get("State", "")
         fips = row.get("FIPS", "N/A")
         
-        # Robust Value Formatting
-        inc_val = row.get('Median_Income', 0)
-        loan_val = row.get('Median_Loan_Amount', 0)
+        # Smart formatting for tooltips
+        dti_raw = row.get('Median_DTI')
+        inc_raw = row.get('Median_Income')
+        loan_raw = row.get('Median_Loan_Amount')
+        disp_raw = row.get('Disparity_Ratio')
+
+        dti_str = f"{dti_raw:.1f}%" if pd.notnull(dti_raw) and dti_raw > 0 else "N/A"
         
-        # Handle $k scaling (if stored as 75 vs 75000)
-        inc_str = f"${inc_val:,.0f}k" if 0 < inc_val < 1000 else f"${inc_val:,.0f}"
-        loan_str = f"${loan_val:,.0f}k" if 0 < loan_val < 1000 else f"${loan_val:,.0f}"
-        dti_str = f"{row.get('Median_DTI', 0):.1f}%"
-        disp_str = f"{row.get('Disparity_Ratio', 0):.2f}x"
-        
-        # Format the active selected metric cleanly
-        if "Rate" in selected_metric_label or "DTI" in selected_metric_label or "CLTV" in selected_metric_label:
-            val_fmt = f"{val:.1f}%" if val < 1.0 and "Rate" not in selected_metric_label else f"{val:.2f}%"
-        elif "Income" in selected_metric_label or "Loan" in selected_metric_label:
-            val_fmt = f"${val:,.0f}k" if 0 < val < 1000 else f"${val:,.0f}"
-        elif "Ratio" in selected_metric_label:
-            val_fmt = f"{val:.2f}x"
+        # Handle $k vs raw $ auto-scaling
+        if pd.notnull(inc_raw) and inc_raw > 0:
+            inc_str = f"${inc_raw:,.0f}k" if inc_raw < 1000 else f"${inc_raw:,.0f}"
         else:
-            val_fmt = f"{val:,.2f}" if isinstance(val, float) else f"{val:,}"
+            inc_str = "N/A"
+
+        if pd.notnull(loan_raw) and loan_raw > 0:
+            loan_str = f"${loan_raw:,.0f}k" if loan_raw < 1000 else f"${loan_raw:,.0f}"
+        else:
+            loan_str = "N/A"
+
+        disp_str = f"{disp_raw:.2f}x" if pd.notnull(disp_raw) and disp_raw > 0 else "N/A"
 
         popup_html = f"""
         <b>{county_name}, {state_name}</b> (FIPS: {fips})<br>
-        <b>{selected_metric_label}:</b> {val_fmt}<br>
+        <b>{selected_metric_label}:</b> {val}<br>
         <hr style="margin: 4px 0;">
         <b>Median Income:</b> {inc_str}<br>
         <b>Median Loan:</b> {loan_str}<br>
@@ -420,7 +430,7 @@ with tab_map:
             fill_color=color,
             fill_opacity=0.7,
             popup=popup_html,
-            tooltip=f"{county_name}, {state_name} - {selected_metric_label}: {val_fmt}"
+            tooltip=f"{county_name}, {state_name} - {selected_metric_label}: {val}"
         ).add_to(m)
 
     st_folium(m, width="100%", height=550)
