@@ -170,6 +170,13 @@ def load_data():
                     df[col].astype(str).str.replace(r"[^\d.]", "", regex=True), 
                     errors="coerce"
                 )
+                
+        # Fix positive longitudes (US longitudes must be negative)
+        if "Lon" in df.columns:
+            df["Lon"] = df["Lon"].apply(lambda x: -abs(x) if pd.notnull(x) and x > 0 else x)
+
+        # Filter out invalid Lat/Lon values outside reasonable US bounds
+        df = df[(df["Lat"].between(24.0, 50.0)) & (df["Lon"].between(-125.0, -65.0))]
 
         # Fallbacks for missing/zero financial metrics using non-zero medians
         default_medians = {
@@ -347,11 +354,22 @@ with tab_map:
     # Map Rendering
     st.markdown("### Geographic Risk & Disparity Map")
 
-    center_lat = filtered_df["Lat"].mean() if not filtered_df.empty else 37.8
-    center_lon = filtered_df["Lon"].mean() if not filtered_df.empty else -96.0
+    # Force US Center Fallbacks
+    if not filtered_df.empty and filtered_df["Lat"].mean() > 0 and filtered_df["Lon"].mean() < 0:
+        center_lat = filtered_df["Lat"].mean()
+        center_lon = filtered_df["Lon"].mean()
+    else:
+        center_lat = 37.8  # Default US Lat
+        center_lon = -96.0 # Default US Lon
+
     zoom_lvl = 6 if selected_state != "All" else 4
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_lvl, tiles="OpenStreetMap")
+    m = folium.Map(
+        location=[center_lat, center_lon], 
+        zoom_start=zoom_lvl, 
+        tiles="OpenStreetMap"
+    )
+
     Fullscreen(position="topright", title="Expand map", title_cancel="Exit fullscreen").add_to(m)
 
     if selected_metric_col in filtered_df.columns:
