@@ -143,7 +143,7 @@ def load_data():
                 rename_dict[orig_col] = "HMDA_Denial_Rate"
             elif "disparity" in lower_col:
                 rename_dict[orig_col] = "Disparity_Ratio"
-            elif "dti" in lower_col:  # Catches media dti, median_dti, debt_to_income, etc.
+            elif "dti" in lower_col:  # Catches median_dti, debt_to_income, media_dti, etc.
                 rename_dict[orig_col] = "Median_DTI"
             elif "cltv" in lower_col or "ltv" in lower_col:
                 rename_dict[orig_col] = "Median_CLTV"
@@ -159,32 +159,10 @@ def load_data():
                 rename_dict[orig_col] = "JSD_Score"
             elif "entropy" in lower_col or lower_col == "se":
                 rename_dict[orig_col] = "Spatial_Entropy"
+            elif "minority" in lower_col or "tract" in lower_col:
+                rename_dict[orig_col] = "tract_minority_population_percent"
 
         df = df.rename(columns=rename_dict)
-
-        # Ensure Median_DTI column exists even if missing from file
-        if "Median_DTI" not in df.columns:
-            df["Median_DTI"] = 36.0
-
-        # Clean numeric types
-        numeric_cols = [
-            "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
-            "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
-            "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy"
-        ]
-
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
-                    errors="coerce"
-                )
-
-        # Fix positive US longitudes
-        if "Lon" in df.columns:
-            df["Lon"] = df["Lon"].apply(lambda x: -abs(x) if pd.notnull(x) and x > 0 else x)
-
-        df = df.dropna(subset=["Lat", "Lon"])
 
     except Exception as e:
         st.error(f"Error loading Parquet: {e}")
@@ -205,22 +183,49 @@ def load_data():
             "Mean_Interest_Rate": [6.25, 6.85, 6.50, 6.95, 6.40],
             "Mean_Rate_Spread": [0.35, 1.15, 0.65, 0.95, 0.45],
             "JSD_Score": [0.12, 0.45, 0.28, 0.38, 0.19],
-            "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0]
+            "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0],
+            "tract_minority_population_percent": [22.5, 48.1, 38.0, 31.2, 29.8]
         }
         df = pd.DataFrame(data)
+
+    # ------------------------------------------
+    # GUARANTEED POST-PROCESSING & DEFAULTS
+    # ------------------------------------------
+    if "Median_DTI" not in df.columns:
+        df["Median_DTI"] = 36.0
+
+    if "tract_minority_population_percent" not in df.columns:
+        df["tract_minority_population_percent"] = 25.0
+
+    if "Disparity_Ratio" not in df.columns:
+        df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2) if "HMDA_Denial_Rate" in df.columns else 1.0
+
+    df["Disparity_Ratio"] = df["Disparity_Ratio"].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+    # Clean numeric types
+    numeric_cols = [
+        "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
+        "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
+        "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy",
+        "tract_minority_population_percent"
+    ]
+
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
+                errors="coerce"
+            )
+
+    # Fix positive US longitudes
+    if "Lon" in df.columns:
+        df["Lon"] = df["Lon"].apply(lambda x: -abs(x) if pd.notnull(x) and x > 0 else x)
+
+    df = df.dropna(subset=["Lat", "Lon"])
 
     return df
 
 df = load_data()
-
-# Ensure mandatory fallback fields exist if missing
-if "Disparity_Ratio" not in df.columns:
-    df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2) if "HMDA_Denial_Rate" in df.columns else 1.0
-        
-df["Disparity_Ratio"] = df["Disparity_Ratio"].replace([np.inf, -np.inf], np.nan).fillna(1.0)
-
-if "tract_minority_population_percent" not in df.columns:
-    df["tract_minority_population_percent"] = 25.0
 
 # Load machine learning model once
 mortgage_model = load_mortgage_model()
@@ -389,7 +394,7 @@ with tab_map:
 
         dti_str = f"{dti_raw:.1f}%" if pd.notnull(dti_raw) and dti_raw > 0 else "N/A"
         
-        # Handle $k vs raw $ auto-scaling
+        # Handle $k vs raw$ auto-scaling
         if pd.notnull(inc_raw) and inc_raw > 0:
             inc_str = f"${inc_raw:,.0f}k" if inc_raw < 1000 else f"${inc_raw:,.0f}"
         else:
