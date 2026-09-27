@@ -214,15 +214,45 @@ with tab_map:
     # --------------------------------------
     st.markdown("### Geographic Risk & Disparity Map")
 
-    # Create Folium Map
+    # Create Base Map
     m = folium.Map(location=[37.8, -96.0], zoom_start=4, tiles="OpenStreetMap")
     
-    # Add Fullscreen button plugin to top-right of the map
+    # Add Fullscreen Plugin
     Fullscreen(position="topright", title="Expand map", title_cancel="Exit fullscreen").add_to(m)
 
-    # Add your choropleth / geojson layer here using selected_metric_col
-    # folium.Choropleth(...).add_to(m)
+    # ADD CIRCLE MARKERS (Blue for lower risk, Red for higher risk/disparity)
+    # Uses filtered_df if sidebar state selection is active, or df
+    plot_df = filtered_df if 'filtered_df' in locals() else df
 
+    for _, row in plot_df.iterrows():
+        # Get metric value (defaulting to 0 if missing)
+        val = row.get(selected_metric_col, 0)
+        
+        # Determine threshold color (e.g., Red for Disparity Ratio > 1.5, otherwise Blue)
+        # Customize thresholds based on selected_metric_col
+        if selected_metric_col == "Disparity_Ratio":
+            color = "red" if val >= 1.5 else "blue"
+        elif selected_metric_col == "HMDA_Denial_Rate":
+            color = "red" if val >= 0.20 else "blue"
+        else:
+            color = "red" if val > plot_df[selected_metric_col].median() else "blue"
+
+        county_name = row.get("County", "Unknown County")
+        state_name = row.get("State", "")
+
+        folium.CircleMarker(
+            location=[row["Lat"], row["Lon"]],
+            radius=6,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.7,
+            popup=f"<b>{county_name}, {state_name}</b><br>{selected_metric_label}: {val}",
+            tooltip=f"{county_name}: {val}"
+        ).add_to(m)
+
+    # Render Map
+    st_folium(m, width="100%", height=550)
     # Render map full width
     st_folium(m, width="100%", height=550)
 
