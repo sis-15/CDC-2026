@@ -120,6 +120,9 @@ if "Disparity_Ratio" not in df.columns:
         df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2)
     else:
         df["Disparity_Ratio"] = 1.0
+        
+df["Disparity_Ratio"] = df["Disparity_Ratio"].replace([np.inf, -np.inf], np.nan)
+df["Disparity_Ratio"] = df["Disparity_Ratio"].fillna(1.0)
 
 # ------------------------------------------
 # SIDEBAR FILTERS
