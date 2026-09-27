@@ -159,8 +159,6 @@ def load_data():
                 rename_dict[orig_col] = "JSD_Score"
             elif "entropy" in lower_col or lower_col == "se":
                 rename_dict[orig_col] = "Spatial_Entropy"
-            elif "minority" in lower_col or "tract" in lower_col:
-                rename_dict[orig_col] = "tract_minority_population_percent"
 
         df = df.rename(columns=rename_dict)
 
@@ -183,8 +181,7 @@ def load_data():
             "Mean_Interest_Rate": [6.25, 6.85, 6.50, 6.95, 6.40],
             "Mean_Rate_Spread": [0.35, 1.15, 0.65, 0.95, 0.45],
             "JSD_Score": [0.12, 0.45, 0.28, 0.38, 0.19],
-            "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0],
-            "tract_minority_population_percent": [22.5, 48.1, 38.0, 31.2, 29.8]
+            "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0]
         }
         df = pd.DataFrame(data)
 
@@ -193,9 +190,6 @@ def load_data():
     # ------------------------------------------
     if "Median_DTI" not in df.columns:
         df["Median_DTI"] = 36.0
-
-    if "tract_minority_population_percent" not in df.columns:
-        df["tract_minority_population_percent"] = 25.0
 
     if "Disparity_Ratio" not in df.columns:
         df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2) if "HMDA_Denial_Rate" in df.columns else 1.0
@@ -206,8 +200,7 @@ def load_data():
     numeric_cols = [
         "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
         "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
-        "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy",
-        "tract_minority_population_percent"
+        "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy"
     ]
 
     for col in numeric_cols:
@@ -485,8 +478,6 @@ with tab_predict:
             interest_rate = st.number_input("Note Interest Rate %", value=6.50, step=0.125, key="input_rate")
             rate_spread = st.number_input("Rate Spread %", value=0.25, step=0.1, key="input_spread")
             
-        minority_pct = st.slider("Tract Minority Population %", 0.0, 100.0, 25.0, key="input_minority")
-        
         lti_ratio = loan_amount / income if income > 0 else 0
         st.caption(f"**Calculated Loan-to-Income (LTI) Ratio:** `{lti_ratio:.2f}x` | **DTI:** `{dti:.1f}%` | **CLTV:** `{cltv:.1f}%`")
         
@@ -497,42 +488,33 @@ with tab_predict:
         
         if run_model:
             if mortgage_model is not None:
+                # 1. Try predicting with 6 underwriting features
                 try:
-                    # Construct 7-feature input dataframe matching model training schema
-                    input_data = pd.DataFrame([[
-                        loan_amount, income, dti, cltv, interest_rate, rate_spread, minority_pct
+                    input_data_6 = pd.DataFrame([[
+                        loan_amount, income, dti, cltv, interest_rate, rate_spread
                     ]], columns=[
-                        'loan_amount', 'income', 'dti', 'cltv', 
-                        'interest_rate', 'rate_spread', 'tract_minority_population_percent'
+                        'loan_amount', 'income', 'dti', 'cltv', 'interest_rate', 'rate_spread'
                     ])
-                    
-                    denial_prob = mortgage_model.predict_proba(input_data)[0][1]
+                    denial_prob = mortgage_model.predict_proba(input_data_6)[0][1]
                     approval_prob = 1.0 - denial_prob
                     
                     st.success("Model Inference Complete")
-                    
                     m1, m2 = st.columns(2)
                     m1.metric(label="Estimated Approval Probability", value=f"{approval_prob * 100:.1f}%")
                     m2.metric(label="Estimated Denial Risk", value=f"{denial_prob * 100:.1f}%")
-                    
                     st.progress(approval_prob)
-                    
-                    if denial_prob > 0.5:
-                        st.warning("⚠️ Elevated Denial Risk Flagged: Underwriting parameters (DTI/CLTV) or regional tract characteristics indicate high denial probability.")
-                    else:
-                        st.info("✅ Favorable Approval Outlook: Applicant debt service capability and property leverage fall within typical lender approval bounds.")
-                        
-                except Exception as e:
-                    # Fallback if model was trained on original 3 features
+
+                except Exception:
+                    # 2. Fallback to 2 basic features (loan_amount, income)
                     try:
-                        input_data_3 = pd.DataFrame(
-                            [[loan_amount, income, minority_pct]], 
-                            columns=['loan_amount', 'income', 'tract_minority_population_percent']
+                        input_data_2 = pd.DataFrame(
+                            [[loan_amount, income]], 
+                            columns=['loan_amount', 'income']
                         )
-                        denial_prob = mortgage_model.predict_proba(input_data_3)[0][1]
+                        denial_prob = mortgage_model.predict_proba(input_data_2)[0][1]
                         approval_prob = 1.0 - denial_prob
                         
-                        st.success("Model Inference Complete (3-Feature Baseline)")
+                        st.success("Model Inference Complete (Baseline Features)")
                         m1, m2 = st.columns(2)
                         m1.metric(label="Estimated Approval Probability", value=f"{approval_prob * 100:.1f}%")
                         m2.metric(label="Estimated Denial Risk", value=f"{denial_prob * 100:.1f}%")
@@ -548,15 +530,15 @@ with tab_predict:
     
     st.subheader("Model Feature Importance & Explainability")
     st.markdown("""
-    *Understanding driver impact: Evaluating how debt burden (DTI), equity leverage (CLTV), pricing (Interest Rate/Spread), and demographic tract composition contribute to approval decisions.*
+    *Understanding driver impact: Evaluating how debt burden (DTI), equity leverage (CLTV), and pricing (Interest Rate/Spread) contribute to approval decisions.*
     """)
     
     if mortgage_model is not None and hasattr(mortgage_model, "feature_importances_"):
         n_features = len(mortgage_model.feature_importances_)
-        if n_features == 7:
-            feature_names = ['Loan Amount', 'Applicant Income', 'DTI Ratio', 'CLTV Ratio', 'Interest Rate', 'Rate Spread', 'Tract Minority %']
-        elif n_features == 3:
-            feature_names = ['Loan Amount', 'Applicant Income', 'Tract Minority %']
+        if n_features == 6:
+            feature_names = ['Loan Amount', 'Applicant Income', 'DTI Ratio', 'CLTV Ratio', 'Interest Rate', 'Rate Spread']
+        elif n_features == 2:
+            feature_names = ['Loan Amount', 'Applicant Income']
         else:
             feature_names = [f"Feature {i+1}" for i in range(n_features)]
             
@@ -586,7 +568,6 @@ with tab_predict:
         st.markdown("""
         - **DTI & CLTV Ratios**: Standard objective financial risk measures evaluated under Qualified Mortgage rules. High DTI or CLTV heavily drives loan rejections.
         - **Interest Rate & Rate Spread**: Capture credit pricing terms and subprime loan tiering.
-        - **Tract Minority %**: Evaluates whether geographic census tract demographics disproportionately correlate with rejection rates after controlling for individual financial risk factors, signaling potential **systemic redlining**.
         """)
 
 # ==========================================
