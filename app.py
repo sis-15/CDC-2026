@@ -164,15 +164,15 @@ tab_map, tab_predict, tab_nlp = st.tabs([
 # ==========================================
 # TAB 1: GEOSPATIAL & METRIC ANALYSIS
 # ==========================================
-with tab1:
+with tab_map:
     # --------------------------------------
     # 1. METRIC SELECTOR (Rows / Pills instead of Dropdown)
     # --------------------------------------
     st.markdown("### 📊 Select Analysis Metric")
     
     metric_options = {
-        "Disparity Ratio": "disparity_ratio",
-        "HMDA Denial Rate": "hmda_denial_rate",
+        "Disparity Ratio": "Disparity_Ratio",
+        "HMDA Denial Rate": "HMDA_Denial_Rate",
         "Minority Population %": "tract_minority_population_percent",
         "Median Income": "median_income"
     }
@@ -195,8 +195,8 @@ with tab1:
     st.markdown("### 📍 Regional Summary")
     
     # Calculate global / regional metrics from your dataset (df)
-    avg_disparity = df['disparity_ratio'].mean() if 'disparity_ratio' in df.columns else 0
-    avg_denial = df['hmda_denial_rate'].mean() if 'hmda_denial_rate' in df.columns else 0
+    avg_disparity = df['Disparity_Ratio'].mean() if 'Disparity_Ratio' in df.columns else 0
+    avg_denial = df['HMDA_Denial_Rate'].mean() if 'HMDA_Denial_Rate' in df.columns else 0
     total_counties = len(df)
     
     m_col1, m_col2, m_col3 = st.columns(3)
@@ -246,12 +246,12 @@ with tab1:
     st.plotly_chart(fig_dist, use_container_width=True)
 
     # Graph 2: Top Counties / Disparity Ranking
-    if 'county' in df.columns:
+    if 'County' in df.columns:
         top_df = df.nlargest(15, selected_metric_col)
         fig_rank = px.bar(
             top_df, 
             x=selected_metric_col, 
-            y='county', 
+            y='County', 
             orientation='h',
             title=f"Top 15 Counties by {selected_metric_label}",
             color=selected_metric_col,
