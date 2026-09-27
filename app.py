@@ -191,10 +191,9 @@ with tab_map:
     metric_options = {
         "Disparity Ratio": "Disparity_Ratio",
         "HMDA Denial Rate": "HMDA_Denial_Rate",
-        "Minority Population %": "tract_minority_population_percent",
-        "Median Income": "median_income"
+        "JSD Divergence Score": "JSD_Score",
+        "Complaint Volume": "Total_Complaints"
     }
-    
     selected_metric_label = st.radio(
         "Choose metric to visualize:",
         options=list(metric_options.keys()),
