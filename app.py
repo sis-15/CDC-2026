@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import joblib
+import folium
+from folium.plugins import Fullscreen
 from streamlit_folium import st_folium
 from src.map_engine import build_carto_map
 from src.nlp_engine import predict_complaint_category, generate_dispute_letter
@@ -159,51 +161,106 @@ tab_map, tab_predict, tab_nlp = st.tabs([
     "Consumer Action Assistant"
 ])
 
-# ------------------------------------------
-# TAB 1: GEOGRAPHIC DISPARITY MAP
-# ------------------------------------------
-with tab_map:
-    metric_info = METRIC_DEFINITIONS[selected_metric]
+# ==========================================
+# TAB 1: GEOSPATIAL & METRIC ANALYSIS
+# ==========================================
+with tab1:
+    # --------------------------------------
+    # 1. METRIC SELECTOR (Rows / Pills instead of Dropdown)
+    # --------------------------------------
+    st.markdown("### 📊 Select Analysis Metric")
     
-    st.subheader(f"Regional Distribution: {metric_info['title']}")
+    metric_options = {
+        "Disparity Ratio": "disparity_ratio",
+        "HMDA Denial Rate": "hmda_denial_rate",
+        "Minority Population %": "tract_minority_population_percent",
+        "Median Income": "median_income"
+    }
     
-    with st.expander("📖 Metric Definition & Analytical Context", expanded=True):
-        st.markdown(f"""
-        **What it measures:** {metric_info['meaning']}  
-        **Mathematical Concept:** `{metric_info['formula']}`  
-        **Policy Implication:** {metric_info['action']}
-        """)
+    # Using horizontal radio pills across the top
+    selected_metric_label = st.radio(
+        "Choose metric to visualize:",
+        options=list(metric_options.keys()),
+        horizontal=True,
+        index=0,
+        key="metric_pill_selector"
+    )
+    selected_metric_col = metric_options[selected_metric_label]
 
-    col_map, col_stats = st.columns([2, 1])
-    
-    with col_map:
-        # Uses filtered_df so map updates when selecting a state
-        m = build_carto_map(filtered_df, selected_metric)
-        st_folium(m, height=520, use_container_width=True, returned_objects=[])
+    st.markdown("---")
 
-    with col_stats:
-        st.write("### Regional Summary")
+    # --------------------------------------
+    # 2. REGIONAL SUMMARY (Centered Full-Width Banner Above Map)
+    # --------------------------------------
+    st.markdown("### 📍 Regional Summary")
+    
+    # Calculate global / regional metrics from your dataset (df)
+    avg_disparity = df['disparity_ratio'].mean() if 'disparity_ratio' in df.columns else 0
+    avg_denial = df['hmda_denial_rate'].mean() if 'hmda_denial_rate' in df.columns else 0
+    total_counties = len(df)
+    
+    m_col1, m_col2, m_col3 = st.columns(3)
+    with m_col1:
+        st.metric("Total Counties / Tracts Analyzed", f"{total_counties:,}")
+    with m_col2:
+        st.metric("Avg Disparity Ratio", f"{avg_disparity:.2f}x")
+    with m_col3:
+        st.metric("Avg HMDA Denial Rate", f"{avg_denial*100:.1f}%")
+
+    st.markdown("---")
+
+    # --------------------------------------
+    # 3. FULLSCREENABLE MAP
+    # --------------------------------------
+    st.markdown("### 🗺️ Geographic Risk & Disparity Map")
+
+    # Create Folium Map
+    m = folium.Map(location=[37.8, -96.0], zoom_start=4, tiles="cartodbpositron")
+    
+    # Add Fullscreen button plugin to top-right of the map
+    Fullscreen(position="topright", title="Expand map", title_cancel="Exit fullscreen").add_to(m)
+
+    # Add your choropleth / geojson layer here using selected_metric_col
+    # folium.Choropleth(...).add_to(m)
+
+    # Render map full width
+    st_folium(m, width="100%", height=550)
+
+    st.markdown("---")
+
+    # --------------------------------------
+    # 4. GRAPHS UNDERNEATH MAP (Full Width & Larger)
+    # --------------------------------------
+    st.markdown("### 📈 Analytical Breakdown & Distribution")
+
+    # Graph 1: Distribution Histogram / KDE
+    fig_dist = px.histogram(
+        df, 
+        x=selected_metric_col, 
+        nbins=40,
+        title=f"Distribution of {selected_metric_label}",
+        color_discrete_sequence=['#1f77b4'],
+        height=450
+    )
+    fig_dist.update_layout(margin=dict(l=20, r=20, t=50, b=20))
+    st.plotly_chart(fig_dist, use_container_width=True)
+
+    # Graph 2: Top Counties / Disparity Ranking
+    if 'county' in df.columns:
+        top_df = df.nlargest(15, selected_metric_col)
+        fig_rank = px.bar(
+            top_df, 
+            x=selected_metric_col, 
+            y='county', 
+            orientation='h',
+            title=f"Top 15 Counties by {selected_metric_label}",
+            color=selected_metric_col,
+            color_continuous_scale="Reds",
+            height=500
+        )
+        fig_rank.update_layout(yaxis={'categoryorder': 'total ascending'}, margin=dict(l=20, r=20, t=50, b=20))
+        st.plotly_chart(fig_rank, use_container_width=True)
         
-        if not filtered_df.empty and selected_metric in filtered_df.columns:
-            avg_val = filtered_df[selected_metric].mean()
-            max_row = filtered_df.loc[filtered_df[selected_metric].idxmax()]
-            
-            st.metric("Average Value", f"{avg_val:.3f}")
-            st.metric("Highest Severity County", f"{max_row['County']} ({max_row[selected_metric]:.3f})")
-            
-            fig = px.bar(
-                filtered_df, 
-                x="County", 
-                y=selected_metric, 
-                color=selected_metric,
-                color_continuous_scale="Reds",
-                title=f"{selected_metric.replace('_', ' ')} by County"
-            )
-            fig.update_layout(height=320, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No data available for the selected filters.")
-
 # ------------------------------------------
 # TAB 2: PREDICTIVE RISK & EXPLAINABILITY
 # ------------------------------------------
