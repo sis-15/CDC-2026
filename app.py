@@ -168,7 +168,7 @@ with tab_map:
     # --------------------------------------
     # 1. METRIC SELECTOR (Rows / Pills instead of Dropdown)
     # --------------------------------------
-    st.markdown("### 📊 Select Analysis Metric")
+    st.markdown("### Select Analysis Metric")
     
     metric_options = {
         "Disparity Ratio": "Disparity_Ratio",
@@ -192,7 +192,7 @@ with tab_map:
     # --------------------------------------
     # 2. REGIONAL SUMMARY (Centered Full-Width Banner Above Map)
     # --------------------------------------
-    st.markdown("### 📍 Regional Summary")
+    st.markdown("### Regional Summary")
     
     # Calculate global / regional metrics from your dataset (df)
     avg_disparity = df['Disparity_Ratio'].mean() if 'Disparity_Ratio' in df.columns else 0
@@ -212,10 +212,10 @@ with tab_map:
     # --------------------------------------
     # 3. FULLSCREENABLE MAP
     # --------------------------------------
-    st.markdown("### 🗺️ Geographic Risk & Disparity Map")
+    st.markdown("### Geographic Risk & Disparity Map")
 
     # Create Folium Map
-    m = folium.Map(location=[37.8, -96.0], zoom_start=4, tiles="cartodbpositron")
+    m = folium.Map(location=[37.8, -96.0], zoom_start=4, tiles="OpenStreetMap")
     
     # Add Fullscreen button plugin to top-right of the map
     Fullscreen(position="topright", title="Expand map", title_cancel="Exit fullscreen").add_to(m)
@@ -231,7 +231,7 @@ with tab_map:
     # --------------------------------------
     # 4. GRAPHS UNDERNEATH MAP (Full Width & Larger)
     # --------------------------------------
-    st.markdown("### 📈 Analytical Breakdown & Distribution")
+    st.markdown("### Analytical Breakdown & Distribution")
 
     # Graph 1: Distribution Histogram / KDE
     fig_dist = px.histogram(
