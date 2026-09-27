@@ -53,13 +53,47 @@ METRIC_DEFINITIONS = {
 }
 
 # ------------------------------------------
-# DATA LOADING (STATIC / MOCK BACKUP)
+# DATA LOADING (.PARQUET INTEGRATION)
 # ------------------------------------------
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv("data/mock_geo_statistical_summary.csv")
-    except Exception:
+        # Load the pre-aggregated Parquet file
+        df = pd.read_parquet("data/geo_statistical_summary.parquet")
+        
+        # Standardize column names (handles lowercase, trailing spaces, or underscores)
+        df.columns = (
+            df.columns.str.strip()
+            .str.lower()
+            .str.replace(" ", "_")
+        )
+        
+        # Map standardized names back to expected app keys if necessary
+        column_mapping = {
+            "total_complaints": "Total_Complaints",
+            "hmda_denial_rate": "HMDA_Denial_Rate",
+            "jsd_score": "JSD_Score",
+            "spatial_entropy": "Spatial_Entropy",
+            "disparity_ratio": "Disparity_Ratio",
+            "county": "County",
+            "state": "State",
+            "lat": "Lat",
+            "lon": "Lon",
+            "fips": "fips"
+        }
+        df = df.rename(columns=column_mapping)
+        
+        # Clean up numeric types
+        numeric_cols = ["Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "JSD_Score", "Spatial_Entropy", "Disparity_Ratio"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+                
+        # Drop rows with missing lat/lon coordinates
+        df = df.dropna(subset=["Lat", "Lon"])
+        
+    except Exception as e:
+        st.error(f"Error loading Parquet dataset: {e}")
         # Emergency fallback mock data structure
         data = {
             "County": ["Wake", "Mecklenburg", "Durham", "Forsyth", "Guilford"],
@@ -73,9 +107,32 @@ def load_data():
             "Disparity_Ratio": [1.1, 1.8, 1.4, 1.6, 1.2]
         }
         df = pd.DataFrame(data)
+        
     return df
 
 df = load_data()
+
+# ------------------------------------------
+# SIDEBAR FILTERS
+# ------------------------------------------
+st.sidebar.header("Filter & Controls")
+
+# State Selection Dropdown
+available_states = ["All"] + sorted(df["State"].dropna().unique().tolist())
+selected_state = st.sidebar.selectbox("Select State", available_states, index=0)
+
+# Filter dataframe based on state selection
+if selected_state != "All":
+    filtered_df = df[df["State"] == selected_state].copy()
+else:
+    filtered_df = df.copy()
+
+# Metric Selection Dropdown
+selected_metric = st.sidebar.selectbox(
+    "Select Metric to Analyze",
+    list(METRIC_DEFINITIONS.keys()),
+    format_func=lambda x: METRIC_DEFINITIONS[x]["title"]
+)
 
 if "Disparity_Ratio" not in df.columns:
     if "HMDA_Denial_Rate" in df.columns:
