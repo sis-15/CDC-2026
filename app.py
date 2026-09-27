@@ -81,7 +81,9 @@ def load_data():
             "state": "State",
             "lat": "Lat",
             "lon": "Lon",
-            "fips": "fips"
+            "fips": "fips",
+            "tract_minority_population_percent": "tract_minority_population_percent",
+            "median_income": "median_income"
         }
         df = df.rename(columns=column_mapping)
         
@@ -226,19 +228,21 @@ with tab_map:
     # ADD CIRCLE MARKERS (Blue for lower risk, Red for higher risk/disparity)
     # Uses filtered_df if sidebar state selection is active, or df
     plot_df = filtered_df if 'filtered_df' in locals() else df
-
+    
+    if selected_metric_col in plot_df.columns:
+        col_median = plot_df[selected_metric_col].median()
+    else:
+        col_median = 0
+    
     for _, row in plot_df.iterrows():
-        # Get metric value (defaulting to 0 if missing)
         val = row.get(selected_metric_col, 0)
         
-        # Determine threshold color (e.g., Red for Disparity Ratio > 1.5, otherwise Blue)
-        # Customize thresholds based on selected_metric_col
         if selected_metric_col == "Disparity_Ratio":
             color = "red" if val >= 1.5 else "blue"
         elif selected_metric_col == "HMDA_Denial_Rate":
             color = "red" if val >= 0.20 else "blue"
         else:
-            color = "red" if val > plot_df[selected_metric_col].median() else "blue"
+            color = "red" if val > col_median else "blue"
 
         county_name = row.get("County", "Unknown County")
         state_name = row.get("State", "")
@@ -265,32 +269,34 @@ with tab_map:
     st.markdown("### Analytical Breakdown & Distribution")
 
     # Graph 1: Distribution Histogram / KDE
-    fig_dist = px.histogram(
-        df, 
-        x=selected_metric_col, 
-        nbins=40,
-        title=f"Distribution of {selected_metric_label}",
-        color_discrete_sequence=['#1f77b4'],
-        height=450
-    )
-    fig_dist.update_layout(margin=dict(l=20, r=20, t=50, b=20))
+    if selected_metric_col in df.columns:
+    # Graph 1: Histogram
+        fig_dist = px.histogram(
+            df, 
+            x=selected_metric_col, 
+            nbins=40,
+            title=f"Distribution of {selected_metric_label}",
+            color_discrete_sequence=['#1f77b4'],
+            height=450
+        )
     st.plotly_chart(fig_dist, use_container_width=True)
 
     # Graph 2: Top Counties / Disparity Ranking
     if 'County' in df.columns:
-        top_df = df.nlargest(15, selected_metric_col)
-        fig_rank = px.bar(
-            top_df, 
-            x=selected_metric_col, 
-            y='County', 
-            orientation='h',
-            title=f"Top 15 Counties by {selected_metric_label}",
-            color=selected_metric_col,
-            color_continuous_scale="Reds",
-            height=500
-        )
-        fig_rank.update_layout(yaxis={'categoryorder': 'total ascending'}, margin=dict(l=20, r=20, t=50, b=20))
-        st.plotly_chart(fig_rank, use_container_width=True)
+            top_df = df.nlargest(15, selected_metric_col)
+            fig_rank = px.bar(
+                top_df, 
+                x=selected_metric_col, 
+                y='County', 
+                orientation='h',
+                title=f"Top 15 Counties by {selected_metric_label}",
+                color=selected_metric_col,
+                color_continuous_scale="Reds",
+                height=500
+            )
+            st.plotly_chart(fig_rank, use_container_width=True)
+    else:
+        st.warning(f"Column '{selected_metric_col}' is not present in the current dataset.")
         
 # ------------------------------------------
 # TAB 2: PREDICTIVE RISK & EXPLAINABILITY
