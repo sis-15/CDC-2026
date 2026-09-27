@@ -165,8 +165,33 @@ def load_data():
         
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-                
+                # Convert string numbers (e.g. "$75,000") to numeric float, coercing errors to NaN
+                df[col] = pd.to_numeric(
+                    df[col].astype(str).str.replace(r"[^\d.]", "", regex=True), 
+                    errors="coerce"
+                )
+
+        # Fallbacks for missing/zero financial metrics using non-zero medians
+        default_medians = {
+            "Median_Income": 75.0,        # $75k
+            "Median_Loan_Amount": 250.0,  # $250k
+            "Median_DTI": 36.0,
+            "Median_CLTV": 80.0,
+            "Mean_Interest_Rate": 6.5,
+            "Mean_Rate_Spread": 0.35,
+            "HMDA_Denial_Rate": 0.15,
+            "Disparity_Ratio": 1.2
+        }
+
+        for col, default_val in default_medians.items():
+            if col in df.columns:
+                # Replace 0 or NaN with overall column median or default baseline
+                non_zero_median = df[df[col] > 0][col].median()
+                fallback = non_zero_median if pd.notnull(non_zero_median) and non_zero_median > 0 else default_val
+                df[col] = df[col].replace(0, np.nan).fillna(fallback)
+            else:
+                df[col] = default_val
+
         # Drop rows with missing lat/lon coordinates
         df = df.dropna(subset=["Lat", "Lon"])
         
@@ -355,17 +380,33 @@ with tab_map:
         state_name = row.get("State", "")
         fips = row.get("FIPS", "N/A")
         
-        # Custom tooltip string formatting
-        dti_str = f"{row.get('Median_DTI', 0):.1f}%" if pd.notnull(row.get('Median_DTI')) else "N/A"
-        inc_str = f"${row.get('Median_Income', 0):,.0f}k" if pd.notnull(row.get('Median_Income')) else "N/A"
-        disp_str = f"{row.get('Disparity_Ratio', 0):.2f}x" if pd.notnull(row.get('Disparity_Ratio')) else "N/A"
+        # Robust Value Formatting
+        inc_val = row.get('Median_Income', 0)
+        loan_val = row.get('Median_Loan_Amount', 0)
+        
+        # Handle $k scaling (if stored as 75 vs 75000)
+        inc_str = f"${inc_val:,.0f}k" if 0 < inc_val < 1000 else f"${inc_val:,.0f}"
+        loan_str = f"${loan_val:,.0f}k" if 0 < loan_val < 1000 else f"${loan_val:,.0f}"
+        dti_str = f"{row.get('Median_DTI', 0):.1f}%"
+        disp_str = f"{row.get('Disparity_Ratio', 0):.2f}x"
+        
+        # Format the active selected metric cleanly
+        if "Rate" in selected_metric_label or "DTI" in selected_metric_label or "CLTV" in selected_metric_label:
+            val_fmt = f"{val:.1f}%" if val < 1.0 and "Rate" not in selected_metric_label else f"{val:.2f}%"
+        elif "Income" in selected_metric_label or "Loan" in selected_metric_label:
+            val_fmt = f"${val:,.0f}k" if 0 < val < 1000 else f"${val:,.0f}"
+        elif "Ratio" in selected_metric_label:
+            val_fmt = f"{val:.2f}x"
+        else:
+            val_fmt = f"{val:,.2f}" if isinstance(val, float) else f"{val:,}"
 
         popup_html = f"""
         <b>{county_name}, {state_name}</b> (FIPS: {fips})<br>
-        <b>{selected_metric_label}:</b> {val}<br>
+        <b>{selected_metric_label}:</b> {val_fmt}<br>
         <hr style="margin: 4px 0;">
-        <b>Median DTI:</b> {dti_str}<br>
         <b>Median Income:</b> {inc_str}<br>
+        <b>Median Loan:</b> {loan_str}<br>
+        <b>Median DTI:</b> {dti_str}<br>
         <b>Disparity Ratio:</b> {disp_str}
         """
 
@@ -377,7 +418,7 @@ with tab_map:
             fill_color=color,
             fill_opacity=0.7,
             popup=popup_html,
-            tooltip=f"{county_name}, {state_name} - {selected_metric_label}: {val}"
+            tooltip=f"{county_name}, {state_name} - {selected_metric_label}: {val_fmt}"
         ).add_to(m)
 
     st_folium(m, width="100%", height=550)
