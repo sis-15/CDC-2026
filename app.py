@@ -121,80 +121,71 @@ def load_data():
     try:
         df = pd.read_parquet("data/geo_statistical_summary.parquet")
         
-        # 1. Clean whitespace and normalize case comparison
-        df.columns = df.columns.str.strip()
-        
-        # 2. Case-insensitive dictionary mapping to standardize column names
-        mapping = {
-            "fips": "FIPS",
-            "county": "County",
-            "state": "State",
-            "lat": "Lat",
-            "latitude": "Lat",
-            "lon": "Lon",
-            "longitude": "Lon",
-            "total_complaints": "Total_Complaints",
-            "total complaints": "Total_Complaints",
-            "hmda_denial_rate": "HMDA_Denial_Rate",
-            "hmda denial rate": "HMDA_Denial_Rate",
-            "disparity_ratio": "Disparity_Ratio",
-            "disparity ratio": "Disparity_Ratio",
-            "median_loan_amount": "Median_Loan_Amount",
-            "median loan amount": "Median_Loan_Amount",
-            "median_loan": "Median_Loan_Amount",
-            "median loan": "Median_Loan_Amount",
-            "median_dti": "Median_DTI",
-            "median dti": "Median_DTI",
-            "median_income": "Median_Income",
-            "median income": "Median_Income",
-            "median_cltv": "Median_CLTV",
-            "median cltv": "Median_CLTV",
-            "mean_interest_rate": "Mean_Interest_Rate",
-            "mean interest rate": "Mean_Interest_Rate",
-            "median_interest_rate": "Mean_Interest_Rate",
-            "median interest rate": "Mean_Interest_Rate",
-            "mean_rate_spread": "Mean_Rate_Spread",
-            "mean rate spread": "Mean_Rate_Spread",
-            "jsd_score": "JSD_Score",
-            "jsd score": "JSD_Score",
-            "jsd": "JSD_Score",
-            "spatial_entropy": "Spatial_Entropy",
-            "spatial entropy": "Spatial_Entropy",
-            "se": "Spatial_Entropy",
-            "tract_minority_population_percent": "tract_minority_population_percent"
-        }
-        
-        lower_cols = {c.lower(): c for c in df.columns}
+        # Standardize spaces and case for inspection
+        clean_cols = {c: c.strip().lower() for c in df.columns}
         rename_dict = {}
-        for key, target_name in mapping.items():
-            if key in lower_cols:
-                rename_dict[lower_cols[key]] = target_name
-                
+
+        # Pattern matchers for key dataset columns
+        for orig_col, lower_col in clean_cols.items():
+            if "fips" in lower_col:
+                rename_dict[orig_col] = "FIPS"
+            elif "county" in lower_col:
+                rename_dict[orig_col] = "County"
+            elif "state" in lower_col:
+                rename_dict[orig_col] = "State"
+            elif lower_col in ["lat", "latitude"]:
+                rename_dict[orig_col] = "Lat"
+            elif lower_col in ["lon", "long", "longitude"]:
+                rename_dict[orig_col] = "Lon"
+            elif "complaint" in lower_col:
+                rename_dict[orig_col] = "Total_Complaints"
+            elif "denial" in lower_col:
+                rename_dict[orig_col] = "HMDA_Denial_Rate"
+            elif "disparity" in lower_col:
+                rename_dict[orig_col] = "Disparity_Ratio"
+            elif "dti" in lower_col:  # Catches media dti, median_dti, debt_to_income, etc.
+                rename_dict[orig_col] = "Median_DTI"
+            elif "cltv" in lower_col or "ltv" in lower_col:
+                rename_dict[orig_col] = "Median_CLTV"
+            elif "income" in lower_col:
+                rename_dict[orig_col] = "Median_Income"
+            elif "loan" in lower_col:
+                rename_dict[orig_col] = "Median_Loan_Amount"
+            elif "spread" in lower_col:
+                rename_dict[orig_col] = "Mean_Rate_Spread"
+            elif "interest" in lower_col or "rate" in lower_col:
+                rename_dict[orig_col] = "Mean_Interest_Rate"
+            elif "jsd" in lower_col:
+                rename_dict[orig_col] = "JSD_Score"
+            elif "entropy" in lower_col or lower_col == "se":
+                rename_dict[orig_col] = "Spatial_Entropy"
+
         df = df.rename(columns=rename_dict)
-        
-        # 3. Clean numeric columns safely
+
+        # Ensure Median_DTI column exists even if missing from file
+        if "Median_DTI" not in df.columns:
+            df["Median_DTI"] = 36.0
+
+        # Clean numeric types
         numeric_cols = [
             "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
             "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
-            "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy",
-            "tract_minority_population_percent"
+            "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy"
         ]
-        
+
         for col in numeric_cols:
             if col in df.columns:
-                # Keep digits, decimal points, and negative signs only
                 df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True), 
+                    df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True),
                     errors="coerce"
                 )
 
-        # 4. Enforce negative longitude for US coordinates
+        # Fix positive US longitudes
         if "Lon" in df.columns:
             df["Lon"] = df["Lon"].apply(lambda x: -abs(x) if pd.notnull(x) and x > 0 else x)
 
-        # 5. Clean up missing values without zeroing out valid metrics
         df = df.dropna(subset=["Lat", "Lon"])
-        
+
     except Exception as e:
         st.error(f"Error loading Parquet: {e}")
         # Fallback mock dataset
@@ -214,11 +205,10 @@ def load_data():
             "Mean_Interest_Rate": [6.25, 6.85, 6.50, 6.95, 6.40],
             "Mean_Rate_Spread": [0.35, 1.15, 0.65, 0.95, 0.45],
             "JSD_Score": [0.12, 0.45, 0.28, 0.38, 0.19],
-            "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0],
-            "tract_minority_population_percent": [22.5, 48.1, 38.0, 31.2, 29.8]
+            "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0]
         }
         df = pd.DataFrame(data)
-        
+
     return df
 
 df = load_data()
