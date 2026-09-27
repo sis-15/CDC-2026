@@ -1,6 +1,8 @@
 import requests
 import pandas as pd
 
+# Made with Gemini
+
 def fetch_cfpb_complaints(state="NC", product="Mortgage", size=500):
     """
     Fetch live complaint data directly from official CFPB API endpoint

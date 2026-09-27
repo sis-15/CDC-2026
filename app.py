@@ -10,6 +10,8 @@ from streamlit_folium import st_folium
 from src.map_engine import build_carto_map
 from src.nlp_engine import predict_complaint_category, generate_dispute_letter
 
+# Made with Gemini
+
 # ------------------------------------------
 # PAGE CONFIGURATION
 # ------------------------------------------
@@ -27,31 +29,78 @@ METRIC_DEFINITIONS = {
         "title": "Racial Approval Disparity Ratio",
         "formula": "Denial Rate (High Minority Tracts) / Denial Rate (Low Minority Tracts)",
         "meaning": "Compares mortgage rejection probability between majority-minority census tracts and majority-white tracts.",
-        "action": "Ratios > 1.5 indicate that minority-majority tracts experience 50%+ higher denial rates."
+        "action": "Ratios > 1.5 indicate that minority-majority tracts experience 50%+ higher denial rates.",
+        "fmt": ":.2f"
     },
     "HMDA_Denial_Rate": {
         "title": "HMDA Mortgage Denial Rate",
         "formula": "Denial Rate = (Denied Applications) / (Total Applications)",
         "meaning": "The proportion of mortgage applications rejected by financial institutions within the county.",
-        "action": "Denial rates above 20% highlight potential credit access bottlenecks."
+        "action": "Denial rates above 20% highlight potential credit access bottlenecks.",
+        "fmt": ":.1%"
     },
     "JSD_Score": {
         "title": "Jensen-Shannon Divergence (JSD) Score",
         "formula": "JSD(P || Q) = 0.5 * D_KL(P || M) + 0.5 * D_KL(Q || M)",
         "meaning": "Measures statistical divergence between regional demographic composition and loan approval distributions.",
-        "action": "High scores (>0.3) flag areas where loan approval rates strongly deviate from demographic expectations."
+        "action": "High scores (>0.3) flag areas where loan approval rates strongly deviate from demographic expectations.",
+        "fmt": ":.3f"
     },
     "Spatial_Entropy": {
         "title": "Spatial Entropic Inequality",
         "formula": "H(X) = - ∑ P(x_i) * log2(P(x_i))",
         "meaning": "Quantifies the randomness and spatial disorder of complaint distribution across tracts.",
-        "action": "Low entropy values indicate hyper-localized geographic pockets of financial distress."
+        "action": "Low entropy values indicate hyper-localized geographic pockets of financial distress.",
+        "fmt": ":.3f"
+    },
+    "Median_DTI": {
+        "title": "Median Debt-to-Income (DTI) Ratio",
+        "formula": "Median(Total Monthly Debt Obligations / Gross Monthly Income)",
+        "meaning": "Key underwriting metric measuring applicant debt burden across the county.",
+        "action": "DTI > 43% generally represents elevated underwriting risk under Qualified Mortgage standards.",
+        "fmt": ":.1f"
+    },
+    "Median_CLTV": {
+        "title": "Median Combined Loan-to-Value (CLTV) Ratio",
+        "formula": "Median(Total Secured Loan Balances / Appraised Property Value)",
+        "meaning": "Measures total borrowing relative to property value, indicating equity buffer.",
+        "action": "CLTV > 80% usually requires private mortgage insurance (PMI) and indicates higher leverage.",
+        "fmt": ":.1f"
+    },
+    "Mean_Interest_Rate": {
+        "title": "Mean Note Interest Rate",
+        "formula": "Average Note Interest Rate across originated loans",
+        "meaning": "Baseline borrowing cost charged by lenders in the geographic area.",
+        "action": "Higher average rates indicate overall tighter credit pricing or subprime concentration.",
+        "fmt": ":.2f%"
+    },
+    "Mean_Rate_Spread": {
+        "title": "Mean Rate Spread",
+        "formula": "Average (APOR Difference above threshold)",
+        "meaning": "Difference between APR and Average Prime Offer Rate for higher-priced mortgage loans.",
+        "action": "Elevated rate spreads flag areas with higher concentration of subprime or predatory loan pricing.",
+        "fmt": ":.2f%"
+    },
+    "Median_Income": {
+        "title": "Median Applicant Income",
+        "formula": "Median Annual Applicant Income ($k)",
+        "meaning": "General economic capacity and earnings baseline for mortgage applicants in the area.",
+        "action": "Lower median incomes require lower loan caps to maintain sustainable DTIs.",
+        "fmt": ":$,.0f"
+    },
+    "Median_Loan_Amount": {
+        "title": "Median Requested Loan Amount",
+        "formula": "Median Loan Amount ($k)",
+        "meaning": "Standard scale of mortgage credit extended per transaction in the county.",
+        "action": "Evaluated alongside income to measure borrowing leverage.",
+        "fmt": ":$,.0f"
     },
     "Total_Complaints": {
         "title": "CFPB Complaint Volume",
         "formula": "Count(Complaints per County)",
         "meaning": "Raw aggregation of formal consumer grievances submitted to the CFPB.",
-        "action": "High volumes signify widespread consumer dissatisfaction with loan terms or servicing."
+        "action": "High volumes signify widespread consumer dissatisfaction with loan terms or servicing.",
+        "fmt": ":,.0f"
     }
 }
 
@@ -64,7 +113,7 @@ def load_mortgage_model():
     try:
         return joblib.load("src/mortgage_model.pkl")
     except Exception as e:
-        st.warning(f"Mortgage model could not be loaded: {e}")
+        st.warning(f"Mortgage model could not be loaded from disk (`src/mortgage_model.pkl`): {e}")
         return None
 
 @st.cache_data
@@ -72,31 +121,48 @@ def load_data():
     try:
         df = pd.read_parquet("data/geo_statistical_summary.parquet")
         
-        # Standardize column names
-        df.columns = (
-            df.columns.str.strip()
-            .str.lower()
-            .str.replace(" ", "_")
-        )
+        # Standardize column names (strip whitespace)
+        df.columns = df.columns.str.strip()
         
+        # Explicit Mapping for expected case variations
         column_mapping = {
-            "total_complaints": "Total_Complaints",
-            "hmda_denial_rate": "HMDA_Denial_Rate",
-            "jsd_score": "JSD_Score",
-            "spatial_entropy": "Spatial_Entropy",
-            "disparity_ratio": "Disparity_Ratio",
+            "fips": "FIPS",
+            "Fips": "FIPS",
             "county": "County",
             "state": "State",
             "lat": "Lat",
             "lon": "Lon",
-            "fips": "fips",
-            "tract_minority_population_percent": "tract_minority_population_percent",
-            "median_income": "median_income"
+            "total_complaints": "Total_Complaints",
+            "hmda_denial_rate": "HMDA_Denial_Rate",
+            "disparity_ratio": "Disparity_Ratio",
+            "median_loan_amount": "Median_Loan_Amount",
+            "median_dti": "Median_DTI",
+            "median_income": "Median_Income",
+            "median_cltv": "Median_CLTV",
+            "mean_interest_rate": "Mean_Interest_Rate",
+            "mean_rate_spread": "Mean_Rate_Spread",
+            "jsd_score": "JSD_Score",
+            "spatial_entropy": "Spatial_Entropy",
+            "tract_minority_population_percent": "tract_minority_population_percent"
         }
-        df = df.rename(columns=column_mapping)
         
-        # Clean up numeric types
-        numeric_cols = ["Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "JSD_Score", "Spatial_Entropy", "Disparity_Ratio", "tract_minority_population_percent", "median_income"]
+        # Case-insensitive column rename matching
+        lower_cols = {c.lower(): c for c in df.columns}
+        rename_dict = {}
+        for target_lower, standardized in column_mapping.items():
+            if target_lower.lower() in lower_cols:
+                rename_dict[lower_cols[target_lower.lower()]] = standardized
+                
+        df = df.rename(columns=rename_dict)
+        
+        # List of all numeric columns to clean
+        numeric_cols = [
+            "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
+            "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
+            "Mean_Interest_Rate", "Mean_Rate_Spread", "JSD_Score", "Spatial_Entropy",
+            "tract_minority_population_percent"
+        ]
+        
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -106,19 +172,25 @@ def load_data():
         
     except Exception as e:
         st.error(f"Error loading Parquet dataset: {e}")
-        # Fallback mock dataset
+        # Fallback mock dataset with all required schema columns
         data = {
+            "FIPS": ["37183", "37119", "37063", "37067", "37081"],
             "County": ["Wake", "Mecklenburg", "Durham", "Forsyth", "Guilford"],
             "State": ["NC"] * 5,
             "Lat": [35.7796, 35.2271, 35.9940, 36.0999, 36.0726],
             "Lon": [-78.6382, -80.8431, -78.8986, -80.2442, -79.7920],
+            "Total_Complaints": [450, 1200, 680, 890, 510],
+            "HMDA_Denial_Rate": [0.11, 0.24, 0.18, 0.22, 0.15],
+            "Disparity_Ratio": [1.1, 1.8, 1.4, 1.6, 1.2],
+            "Median_Loan_Amount": [310.0, 280.0, 260.0, 210.0, 225.0],
+            "Median_DTI": [36.0, 42.0, 38.5, 41.0, 37.0],
+            "Median_Income": [80.5, 69.2, 71.0, 58.4, 61.2],
+            "Median_CLTV": [78.0, 85.0, 82.0, 88.0, 80.0],
+            "Mean_Interest_Rate": [6.25, 6.85, 6.50, 6.95, 6.40],
+            "Mean_Rate_Spread": [0.35, 1.15, 0.65, 0.95, 0.45],
             "JSD_Score": [0.12, 0.45, 0.28, 0.38, 0.19],
             "Spatial_Entropy": [2.1, 1.2, 1.8, 1.4, 2.0],
-            "HMDA_Denial_Rate": [0.11, 0.24, 0.18, 0.22, 0.15],
-            "Total_Complaints": [450, 1200, 680, 890, 510],
-            "Disparity_Ratio": [1.1, 1.8, 1.4, 1.6, 1.2],
-            "tract_minority_population_percent": [22.5, 48.1, 38.0, 31.2, 29.8],
-            "median_income": [80500, 69200, 71000, 58400, 61200]
+            "tract_minority_population_percent": [22.5, 48.1, 38.0, 31.2, 29.8]
         }
         df = pd.DataFrame(data)
         
@@ -126,14 +198,14 @@ def load_data():
 
 df = load_data()
 
-# Ensure Disparity Ratio exists in dataframe
+# Ensure mandatory fallback fields exist if missing
 if "Disparity_Ratio" not in df.columns:
-    if "HMDA_Denial_Rate" in df.columns:
-        df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2)
-    else:
-        df["Disparity_Ratio"] = 1.0
+    df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2) if "HMDA_Denial_Rate" in df.columns else 1.0
         
 df["Disparity_Ratio"] = df["Disparity_Ratio"].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+if "tract_minority_population_percent" not in df.columns:
+    df["tract_minority_population_percent"] = 25.0
 
 # Load machine learning model once
 mortgage_model = load_mortgage_model()
@@ -188,21 +260,42 @@ tab_map, tab_predict, tab_nlp = st.tabs([
 with tab_map:
     st.markdown("### Select Analysis Metric")
     
-    metric_options = {
-        "Disparity Ratio": "Disparity_Ratio",
-        "HMDA Denial Rate": "HMDA_Denial_Rate",
-        "JSD Divergence Score": "JSD_Score",
-        "Spatial Entropy": "Spatial_Entropy",
-        "Complaint Volume": "Total_Complaints"
+    # Categorized Metric Selector
+    metric_categories = {
+        "Fair Lending & Disparity": {
+            "Disparity Ratio": "Disparity_Ratio",
+            "HMDA Denial Rate": "HMDA_Denial_Rate",
+            "JSD Divergence Score": "JSD_Score",
+            "Spatial Entropy": "Spatial_Entropy"
+        },
+        "Underwriting & Risk Controls": {
+            "Median DTI Ratio": "Median_DTI",
+            "Median CLTV Ratio": "Median_CLTV",
+            "Mean Interest Rate": "Mean_Interest_Rate",
+            "Mean Rate Spread": "Mean_Rate_Spread",
+            "Median Applicant Income": "Median_Income",
+            "Median Loan Amount": "Median_Loan_Amount"
+        },
+        "Activity & Volume": {
+            "CFPB Complaint Volume": "Total_Complaints"
+        }
     }
-    selected_metric_label = st.radio(
-        "Choose metric to visualize:",
-        options=list(metric_options.keys()),
-        horizontal=True,
-        index=0,
-        key="metric_pill_selector"
-    )
-    selected_metric_col = metric_options[selected_metric_label]
+    
+    col_cat, col_met = st.columns([1, 2])
+    with col_cat:
+        selected_category = st.selectbox(
+            "Metric Category:", 
+            options=list(metric_categories.keys()),
+            key="metric_category_select"
+        )
+    with col_met:
+        selected_metric_label = st.selectbox(
+            "Choose Metric to Visualize:",
+            options=list(metric_categories[selected_category].keys()),
+            key="metric_label_select"
+        )
+        
+    selected_metric_col = metric_categories[selected_category][selected_metric_label]
 
     st.markdown("---")
 
@@ -211,22 +304,24 @@ with tab_map:
     
     avg_disparity = filtered_df['Disparity_Ratio'].mean() if 'Disparity_Ratio' in filtered_df.columns else 0
     avg_denial = filtered_df['HMDA_Denial_Rate'].mean() if 'HMDA_Denial_Rate' in filtered_df.columns else 0
+    avg_dti = filtered_df['Median_DTI'].mean() if 'Median_DTI' in filtered_df.columns else 0
     total_counties = len(filtered_df)
     
-    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
     with m_col1:
-        st.metric("Counties / Tracts Analyzed", f"{total_counties:,}")
+        st.metric("Counties / Tracts", f"{total_counties:,}")
     with m_col2:
         st.metric("Avg Disparity Ratio", f"{avg_disparity:.2f}x")
     with m_col3:
         st.metric("Avg HMDA Denial Rate", f"{avg_denial * 100:.1f}%")
+    with m_col4:
+        st.metric("Avg County Median DTI", f"{avg_dti:.1f}%")
 
     st.markdown("---")
 
     # Map Rendering
     st.markdown("### Geographic Risk & Disparity Map")
 
-    # Dynamic map centering based on filtered dataset
     center_lat = filtered_df["Lat"].mean() if not filtered_df.empty else 37.8
     center_lon = filtered_df["Lon"].mean() if not filtered_df.empty else -96.0
     zoom_lvl = 6 if selected_state != "All" else 4
@@ -242,25 +337,47 @@ with tab_map:
     for _, row in filtered_df.iterrows():
         val = row.get(selected_metric_col, 0)
         
+        # Color scale thresholding rules
         if selected_metric_col == "Disparity_Ratio":
             color = "red" if val >= 1.5 else "blue"
         elif selected_metric_col == "HMDA_Denial_Rate":
             color = "red" if val >= 0.20 else "blue"
+        elif selected_metric_col == "Median_DTI":
+            color = "red" if val >= 43.0 else "blue"
+        elif selected_metric_col == "Median_CLTV":
+            color = "red" if val >= 80.0 else "blue"
+        elif selected_metric_col == "Mean_Rate_Spread":
+            color = "red" if val >= 1.5 else "blue"
         else:
             color = "red" if val > col_median else "blue"
 
         county_name = row.get("County", "Unknown County")
         state_name = row.get("State", "")
+        fips = row.get("FIPS", "N/A")
+        
+        # Custom tooltip string formatting
+        dti_str = f"{row.get('Median_DTI', 0):.1f}%" if pd.notnull(row.get('Median_DTI')) else "N/A"
+        inc_str = f"${row.get('Median_Income', 0):,.0f}k" if pd.notnull(row.get('Median_Income')) else "N/A"
+        disp_str = f"{row.get('Disparity_Ratio', 0):.2f}x" if pd.notnull(row.get('Disparity_Ratio')) else "N/A"
+
+        popup_html = f"""
+        <b>{county_name}, {state_name}</b> (FIPS: {fips})<br>
+        <b>{selected_metric_label}:</b> {val}<br>
+        <hr style="margin: 4px 0;">
+        <b>Median DTI:</b> {dti_str}<br>
+        <b>Median Income:</b> {inc_str}<br>
+        <b>Disparity Ratio:</b> {disp_str}
+        """
 
         folium.CircleMarker(
             location=[row["Lat"], row["Lon"]],
-            radius=6,
+            radius=7,
             color=color,
             fill=True,
             fill_color=color,
             fill_opacity=0.7,
-            popup=f"<b>{county_name}, {state_name}</b><br>{selected_metric_label}: {val}",
-            tooltip=f"{county_name}: {val}"
+            popup=popup_html,
+            tooltip=f"{county_name}, {state_name} - {selected_metric_label}: {val}"
         ).add_to(m)
 
     st_folium(m, width="100%", height=550)
@@ -277,7 +394,7 @@ with tab_map:
             nbins=40,
             title=f"Distribution of {selected_metric_label}",
             color_discrete_sequence=['#1f77b4'],
-            height=400
+            height=380
         )
         st.plotly_chart(fig_dist, use_container_width=True)
 
@@ -288,33 +405,42 @@ with tab_map:
                 x=selected_metric_col, 
                 y='County', 
                 orientation='h',
-                title=f"Top Counties by {selected_metric_label}",
+                title=f"Top 15 Counties by {selected_metric_label}",
                 color=selected_metric_col,
                 color_continuous_scale="Reds",
-                height=500
+                height=480
             )
             fig_rank.update_layout(yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig_rank, use_container_width=True)
     else:
-        st.warning(f"Column '{selected_metric_col}' is not present in the current dataset.")
+        st.warning(f"Column '{selected_metric_col}' is not present in the dataset.")
 
 # ==========================================
 # TAB 2: PREDICTIVE RISK & EXPLAINABILITY
 # ==========================================
 with tab_predict:
     st.subheader("Predictive Risk & Approval Estimator")
-    st.caption("Inference and model explainability powered by Random Forest trained on HMDA applicant data.")
+    st.caption("Inference and model explainability powered by Random Forest incorporating core HMDA underwriting risk controls.")
     
     col_input, col_viz = st.columns([1, 1])
     
     with col_input:
-        st.markdown("### Applicant & Tract Profile")
-        income = st.number_input("Applicant Annual Income ($k)", value=75, step=5)
-        loan_amount = st.number_input("Requested Loan Amount ($k)", value=250, step=10)
-        minority_pct = st.slider("Tract Minority Population %", 0.0, 100.0, 25.0)
+        st.markdown("### Applicant Underwriting Profile")
+        
+        c_in1, c_in2 = st.columns(2)
+        with c_in1:
+            income = st.number_input("Annual Income ($k)", value=75, step=5, key="input_inc")
+            loan_amount = st.number_input("Loan Amount ($k)", value=250, step=10, key="input_loan")
+            dti = st.number_input("Debt-to-Income (DTI) %", value=36.0, step=1.0, key="input_dti")
+        with c_in2:
+            cltv = st.number_input("Combined Loan-to-Value (CLTV) %", value=80.0, step=1.0, key="input_cltv")
+            interest_rate = st.number_input("Note Interest Rate %", value=6.50, step=0.125, key="input_rate")
+            rate_spread = st.number_input("Rate Spread %", value=0.25, step=0.1, key="input_spread")
+            
+        minority_pct = st.slider("Tract Minority Population %", 0.0, 100.0, 25.0, key="input_minority")
         
         lti_ratio = loan_amount / income if income > 0 else 0
-        st.caption(f"**Calculated Loan-to-Income (LTI) Ratio:** `{lti_ratio:.2f}x`")
+        st.caption(f"**Calculated Loan-to-Income (LTI) Ratio:** `{lti_ratio:.2f}x` | **DTI:** `{dti:.1f}%` | **CLTV:** `{cltv:.1f}%`")
         
         run_model = st.button("Run Risk & Approval Model", use_container_width=True)
 
@@ -324,10 +450,13 @@ with tab_predict:
         if run_model:
             if mortgage_model is not None:
                 try:
-                    input_data = pd.DataFrame(
-                        [[loan_amount, income, minority_pct]], 
-                        columns=['loan_amount', 'income', 'tract_minority_population_percent']
-                    )
+                    # Construct 7-feature input dataframe matching model training schema
+                    input_data = pd.DataFrame([[
+                        loan_amount, income, dti, cltv, interest_rate, rate_spread, minority_pct
+                    ]], columns=[
+                        'loan_amount', 'income', 'dti', 'cltv', 
+                        'interest_rate', 'rate_spread', 'tract_minority_population_percent'
+                    ])
                     
                     denial_prob = mortgage_model.predict_proba(input_data)[0][1]
                     approval_prob = 1.0 - denial_prob
@@ -341,12 +470,27 @@ with tab_predict:
                     st.progress(approval_prob)
                     
                     if denial_prob > 0.5:
-                        st.warning("High Denial Risk Flagged: Loan-to-income ratio or regional tract characteristics indicate elevated risk.")
+                        st.warning("⚠️ Elevated Denial Risk Flagged: Underwriting parameters (DTI/CLTV) or regional tract characteristics indicate high denial probability.")
                     else:
-                        st.info("Favorable Approval Outlook: Applicant income and loan profile fall within typical approval ranges.")
+                        st.info("✅ Favorable Approval Outlook: Applicant debt service capability and property leverage fall within typical lender approval bounds.")
                         
                 except Exception as e:
-                    st.error(f"Error executing model inference: {e}")
+                    # Fallback if model was trained on original 3 features
+                    try:
+                        input_data_3 = pd.DataFrame(
+                            [[loan_amount, income, minority_pct]], 
+                            columns=['loan_amount', 'income', 'tract_minority_population_percent']
+                        )
+                        denial_prob = mortgage_model.predict_proba(input_data_3)[0][1]
+                        approval_prob = 1.0 - denial_prob
+                        
+                        st.success("Model Inference Complete (3-Feature Baseline)")
+                        m1, m2 = st.columns(2)
+                        m1.metric(label="Estimated Approval Probability", value=f"{approval_prob * 100:.1f}%")
+                        m2.metric(label="Estimated Denial Risk", value=f"{denial_prob * 100:.1f}%")
+                        st.progress(approval_prob)
+                    except Exception as ex_fallback:
+                        st.error(f"Error executing model inference: {ex_fallback}")
             else:
                 st.error("Model file (`src/mortgage_model.pkl`) not available. Check your file path.")
         else:
@@ -356,11 +500,18 @@ with tab_predict:
     
     st.subheader("Model Feature Importance & Explainability")
     st.markdown("""
-    *Understanding driver impact: How different financial and regional variables contribute to approval decisioning across the dataset.*
+    *Understanding driver impact: Evaluating how debt burden (DTI), equity leverage (CLTV), pricing (Interest Rate/Spread), and demographic tract composition contribute to approval decisions.*
     """)
     
     if mortgage_model is not None and hasattr(mortgage_model, "feature_importances_"):
-        feature_names = ['Loan Amount', 'Applicant Income', 'Tract Minority %']
+        n_features = len(mortgage_model.feature_importances_)
+        if n_features == 7:
+            feature_names = ['Loan Amount', 'Applicant Income', 'DTI Ratio', 'CLTV Ratio', 'Interest Rate', 'Rate Spread', 'Tract Minority %']
+        elif n_features == 3:
+            feature_names = ['Loan Amount', 'Applicant Income', 'Tract Minority %']
+        else:
+            feature_names = [f"Feature {i+1}" for i in range(n_features)]
+            
         importances = mortgage_model.feature_importances_
         
         fi_df = pd.DataFrame({
@@ -378,15 +529,16 @@ with tab_predict:
             color='Importance',
             color_continuous_scale='Blues'
         )
-        fig_fi.update_layout(showlegend=False, height=300)
+        fig_fi.update_layout(showlegend=False, height=350)
         st.plotly_chart(fig_fi, use_container_width=True)
     else:
         st.info("Feature importance visualization is active when `src/mortgage_model.pkl` is loaded and trained.")
         
-    with st.expander("💡 How to interpret Feature Importance"):
+    with st.expander("💡 How to interpret Underwriting Feature Importance"):
         st.markdown("""
-        - **Loan Amount vs. Applicant Income**: Standard debt-to-income indicators evaluated by underwriting algorithms.
-        - **Tract Minority %**: Measures whether geographic census tract demographics disproportionately correlate with rejection rates independently of individual income factors, indicating potential **systemic redlining**.
+        - **DTI & CLTV Ratios**: Standard objective financial risk measures evaluated under Qualified Mortgage rules. High DTI or CLTV heavily drives loan rejections.
+        - **Interest Rate & Rate Spread**: Capture credit pricing terms and subprime loan tiering.
+        - **Tract Minority %**: Evaluates whether geographic census tract demographics disproportionately correlate with rejection rates after controlling for individual financial risk factors, signaling potential **systemic redlining**.
         """)
 
 # ==========================================

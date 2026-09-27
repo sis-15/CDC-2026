@@ -1,5 +1,7 @@
 import folium
 
+# Made with Gemini
+
 def build_carto_map(df, selected_metric):
     """Constructs a Folium map dynamically centered on the filtered county dataset."""
     if df.empty:

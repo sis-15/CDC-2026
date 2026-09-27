@@ -3,6 +3,8 @@ import numpy as np
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 
+# Made with Gemini
+
 def train_and_save_model():
     # 1. Load your new Parquet dataset
     df = pd.read_parquet("data/geo_statistical_summary.parquet")

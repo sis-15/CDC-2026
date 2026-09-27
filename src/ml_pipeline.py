@@ -3,6 +3,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 import joblib
 
+# Made with Gemini
+
 def train_mortgage_model(hmda_csv_path):
     df = pd.read_csv(hmda_csv_path, low_memory=False)
     

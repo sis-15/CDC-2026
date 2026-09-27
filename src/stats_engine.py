@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.spatial.distance import jensenshannon
 
+# Made with Gemini
+
 def calculate_spatial_entropy(probabilities):
     """compute shannon entropy to measure inequality chaos"""
     p = np.array(probabilities)
