@@ -23,26 +23,26 @@ METRIC_DEFINITIONS = {
     "JSD_Score": {
         "title": "Jensen-Shannon Divergence (JSD) Score",
         "formula": "JSD(P || Q) = 0.5 * D_KL(P || M) + 0.5 * D_KL(Q || M)",
-        "meaning": "Measures statistical divergence between regional demographic composition and loan approval distributions. Higher values indicate severe structural market divergence.",
-        "action": "High scores (>0.3) flag areas where loan approval rates strongly deviate from regional baseline demographic expectations."
+        "meaning": "Measures statistical divergence between regional demographic composition and loan approval distributions.",
+        "action": "High scores (>0.3) flag areas where loan approval rates strongly deviate from demographic expectations."
     },
     "Spatial_Entropy": {
         "title": "Spatial Entropic Inequality",
         "formula": "H(X) = - ∑ P(x_i) * log2(P(x_i))",
         "meaning": "Quantifies the randomness and spatial disorder of complaint distribution across tracts.",
-        "action": "Low entropy values indicate hyper-localized geographic pockets of financial distress requiring targeted intervention."
+        "action": "Low entropy values indicate hyper-localized geographic pockets of financial distress."
     },
     "HMDA_Denial_Rate": {
         "title": "HMDA Mortgage Denial Rate",
         "formula": "Denial Rate = (Denied Applications) / (Total Applications)",
         "meaning": "The proportion of mortgage applications rejected by financial institutions within the county.",
-        "action": "Denial rates above 20% highlight potential credit access bottlenecks or overly restrictive underwriting filters."
+        "action": "Denial rates above 20% highlight potential credit access bottlenecks."
     },
     "Total_Complaints": {
         "title": "CFPB Complaint Volume",
         "formula": "Count(Complaints per County)",
         "meaning": "Raw aggregation of formal consumer grievances submitted to the CFPB.",
-        "action": "High volumes signify widespread consumer dissatisfaction with loan servicing or disclosure terms."
+        "action": "High volumes signify widespread consumer dissatisfaction with loan terms or servicing."
     },
     "Disparity_Ratio": {
         "title": "Racial Approval Disparity Ratio",
@@ -112,14 +112,21 @@ def load_data():
 
 df = load_data()
 
+# Ensure Disparity Ratio exists in dataframe
+if "Disparity_Ratio" not in df.columns:
+    if "HMDA_Denial_Rate" in df.columns:
+        df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2)
+    else:
+        df["Disparity_Ratio"] = 1.0
+
 # ------------------------------------------
 # SIDEBAR FILTERS
 # ------------------------------------------
 st.sidebar.header("Filter & Controls")
 
 # State Selection Dropdown
-available_states = ["All"] + sorted(df["State"].dropna().unique().tolist())
-selected_state = st.sidebar.selectbox("Select State", available_states, index=0)
+available_states = ["All"] + sorted([str(s) for s in df["State"].dropna().unique().tolist()])
+selected_state = st.sidebar.selectbox("Select State", available_states, index=0, key="state_select_sidebar")
 
 # Filter dataframe based on state selection
 if selected_state != "All":
@@ -130,31 +137,18 @@ else:
 # Metric Selection Dropdown
 selected_metric = st.sidebar.selectbox(
     "Select Metric to Analyze",
-    list(METRIC_DEFINITIONS.keys()),
-    format_func=lambda x: METRIC_DEFINITIONS[x]["title"]
+    options=list(METRIC_DEFINITIONS.keys()),
+    format_func=lambda x: METRIC_DEFINITIONS.get(x, {}).get("title", x),
+    key="metric_select_sidebar"
 )
 
-if "Disparity_Ratio" not in df.columns:
-    if "HMDA_Denial_Rate" in df.columns:
-        # Generate a synthetic disparity ratio derived from HMDA Denial Rate if missing
-        df["Disparity_Ratio"] = (df["HMDA_Denial_Rate"] * 1.5).round(2)
-    else:
-        df["Disparity_Ratio"] = 1.0
-
 # ------------------------------------------
-# HEADER & SIDEBAR NAVIGATION
+# MAIN HEADER
 # ------------------------------------------
 st.title("Consumer Protection & Financial Equity Engine")
 st.markdown("""
 An analytical platform mapping structural mortgage disparity, estimating approval risk, and providing AI-driven consumer dispute assistance.
 """)
-
-st.sidebar.header("Filter & Metric Selection")
-selected_metric = st.sidebar.selectbox(
-    "Select Metric to Analyze",
-    list(METRIC_DEFINITIONS.keys()),
-    format_func=lambda x: METRIC_DEFINITIONS[x]["title"]
-)
 
 # ------------------------------------------
 # APPLICATION TABS
@@ -183,28 +177,32 @@ with tab_map:
     col_map, col_stats = st.columns([2, 1])
     
     with col_map:
-        m = build_carto_map(df, selected_metric)
+        # Uses filtered_df so map updates when selecting a state
+        m = build_carto_map(filtered_df, selected_metric)
         st_folium(m, height=520, use_container_width=True, returned_objects=[])
 
     with col_stats:
         st.write("### Regional Summary")
         
-        avg_val = df[selected_metric].mean()
-        max_row = df.loc[df[selected_metric].idxmax()]
-        
-        st.metric(f"State Average ({selected_metric})", f"{avg_val:.3f}")
-        st.metric("Highest Severity County", f"{max_row['County']} ({max_row[selected_metric]:.3f})")
-        
-        fig = px.bar(
-            df, 
-            x="County", 
-            y=selected_metric, 
-            color=selected_metric,
-            color_continuous_scale="Reds",
-            title=f"{selected_metric.replace('_', ' ')} by County"
-        )
-        fig.update_layout(height=320, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        if not filtered_df.empty and selected_metric in filtered_df.columns:
+            avg_val = filtered_df[selected_metric].mean()
+            max_row = filtered_df.loc[filtered_df[selected_metric].idxmax()]
+            
+            st.metric("Average Value", f"{avg_val:.3f}")
+            st.metric("Highest Severity County", f"{max_row['County']} ({max_row[selected_metric]:.3f})")
+            
+            fig = px.bar(
+                filtered_df, 
+                x="County", 
+                y=selected_metric, 
+                color=selected_metric,
+                color_continuous_scale="Reds",
+                title=f"{selected_metric.replace('_', ' ')} by County"
+            )
+            fig.update_layout(height=320, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No data available for the selected filters.")
 
 # ------------------------------------------
 # TAB 2: PREDICTIVE RISK & EXPLAINABILITY
