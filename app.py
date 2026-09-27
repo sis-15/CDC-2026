@@ -253,8 +253,6 @@ with tab_map:
 
     # Render Map
     st_folium(m, width="100%", height=550)
-    # Render map full width
-    st_folium(m, width="100%", height=550)
 
     st.markdown("---")
 
