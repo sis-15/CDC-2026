@@ -124,14 +124,16 @@ def load_data():
         # Standardize column names (strip whitespace)
         df.columns = df.columns.str.strip()
         
-        # Explicit Mapping for expected case variations
+        # Comprehensive mapping for casing & synonyms
         column_mapping = {
             "fips": "FIPS",
-            "Fips": "FIPS",
             "county": "County",
             "state": "State",
             "lat": "Lat",
+            "latitude": "Lat",
             "lon": "Lon",
+            "long": "Lon",
+            "longitude": "Lon",
             "total_complaints": "Total_Complaints",
             "hmda_denial_rate": "HMDA_Denial_Rate",
             "disparity_ratio": "Disparity_Ratio",
@@ -150,12 +152,12 @@ def load_data():
         lower_cols = {c.lower(): c for c in df.columns}
         rename_dict = {}
         for target_lower, standardized in column_mapping.items():
-            if target_lower.lower() in lower_cols:
-                rename_dict[lower_cols[target_lower.lower()]] = standardized
+            if target_lower in lower_cols:
+                rename_dict[lower_cols[target_lower]] = standardized
                 
         df = df.rename(columns=rename_dict)
         
-        # List of all numeric columns to clean
+        # Convert numeric columns safely
         numeric_cols = [
             "Lat", "Lon", "Total_Complaints", "HMDA_Denial_Rate", "Disparity_Ratio",
             "Median_Loan_Amount", "Median_DTI", "Median_Income", "Median_CLTV",
@@ -165,46 +167,28 @@ def load_data():
         
         for col in numeric_cols:
             if col in df.columns:
-                # Convert string numbers (e.g. "$75,000") to numeric float, coercing errors to NaN
                 df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(r"[^\d.]", "", regex=True), 
+                    df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True), 
                     errors="coerce"
                 )
-                
-        # Fix positive longitudes (US longitudes must be negative)
+
+        # Force US longitudes to be negative if they were exported as positive
         if "Lon" in df.columns:
             df["Lon"] = df["Lon"].apply(lambda x: -abs(x) if pd.notnull(x) and x > 0 else x)
 
-        # Filter out invalid Lat/Lon values outside reasonable US bounds
-        df = df[(df["Lat"].between(24.0, 50.0)) & (df["Lon"].between(-125.0, -65.0))]
+        # Clean NaN coordinates without dropping valid rows
+        if "Lat" in df.columns and "Lon" in df.columns:
+            df = df.dropna(subset=["Lat", "Lon"])
 
-        # Fallbacks for missing/zero financial metrics using non-zero medians
-        default_medians = {
-            "Median_Income": 75.0,        # $75k
-            "Median_Loan_Amount": 250.0,  # $250k
-            "Median_DTI": 36.0,
-            "Median_CLTV": 80.0,
-            "Mean_Interest_Rate": 6.5,
-            "Mean_Rate_Spread": 0.35,
-            "HMDA_Denial_Rate": 0.15,
-            "Disparity_Ratio": 1.2
-        }
+        # Check if table has rows remaining
+        if df.empty:
+            raise ValueError("Parquet file loaded successfully but contained 0 valid rows after coordinate processing.")
+            
+        print(f"Successfully loaded {len(df)} real records from Parquet!")
 
-        for col, default_val in default_medians.items():
-            if col in df.columns:
-                # Replace 0 or NaN with overall column median or default baseline
-                non_zero_median = df[df[col] > 0][col].median()
-                fallback = non_zero_median if pd.notnull(non_zero_median) and non_zero_median > 0 else default_val
-                df[col] = df[col].replace(0, np.nan).fillna(fallback)
-            else:
-                df[col] = default_val
-
-        # Drop rows with missing lat/lon coordinates
-        df = df.dropna(subset=["Lat", "Lon"])
-        
     except Exception as e:
-        st.error(f"Error loading Parquet dataset: {e}")
-        # Fallback mock dataset with all required schema columns
+        st.warning(f"Using fallback dataset. Reason: {e}")
+        # Fallback mock dataset
         data = {
             "FIPS": ["37183", "37119", "37063", "37067", "37081"],
             "County": ["Wake", "Mecklenburg", "Durham", "Forsyth", "Guilford"],
