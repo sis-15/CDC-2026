@@ -192,6 +192,7 @@ with tab_map:
         "Disparity Ratio": "Disparity_Ratio",
         "HMDA Denial Rate": "HMDA_Denial_Rate",
         "JSD Divergence Score": "JSD_Score",
+        "Spatial Entropy": "Spatial_Entropy",
         "Complaint Volume": "Total_Complaints"
     }
     selected_metric_label = st.radio(
